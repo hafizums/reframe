@@ -10,14 +10,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Compile Python sources
-        run: python -m py_compile main.py reframe_app.py reframe_core.py
-      - name: Install test dependency
-        run: python -m pip install pytest
-      - name: Run core tests
+        run: python -m compileall main.py reframe_app.py reframe_core.py
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
         run: pytest -q

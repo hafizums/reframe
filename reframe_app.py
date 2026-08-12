@@ -4,8 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import QEvent, QPoint, QRect, QThread, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygon, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSplitter,
+    QStyle,
+    QStyleOptionSlider,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -31,13 +33,19 @@ from PySide6.QtWidgets import (
 )
 
 from reframe_core import (
+    KEYFRAME_REMOVE_TOLERANCE,
+    KEYFRAME_TIME_TOLERANCE,
     Keyframe,
     ReframeProject,
     VideoInfo,
+    add_or_update_keyframe_at,
     build_ffmpeg_command,
     crop_geometry,
     default_resolution,
+    find_keyframe_index_at_time,
+    format_position_label,
     interpolate_position,
+    marker_time_fraction,
     probe_video,
 )
 
@@ -100,6 +108,137 @@ QProgressBar {
 }
 QProgressBar::chunk { background: #10b8c7; }
 """
+
+
+class TimelineMarkerLayer(QWidget):
+    marker_clicked = Signal(int)
+
+    MARKER_HIT_RADIUS = 10
+
+    def __init__(self, slider: QSlider):
+        super().__init__(slider)
+        self._slider = slider
+        self._keyframes: list[Keyframe] = []
+        self._duration_ms = 1
+        self._active_index: int | None = None
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self._slider.installEventFilter(self)
+        slider.valueChanged.connect(self.update)
+        slider.rangeChanged.connect(self._sync_geometry)
+
+    def set_keyframes(self, keyframes: list[Keyframe], duration_ms: int, active_index: int | None) -> None:
+        self._keyframes = sorted(keyframes, key=lambda item: item.time)
+        self._duration_ms = max(1, duration_ms)
+        self._active_index = active_index
+        self._sync_geometry()
+        self.update()
+
+    @property
+    def keyframes(self) -> list[Keyframe]:
+        return list(self._keyframes)
+
+    @property
+    def marker_count(self) -> int:
+        return len(self._keyframes)
+
+    @property
+    def active_marker_index(self) -> int | None:
+        return self._active_index
+
+    @property
+    def duration_ms(self) -> int:
+        return self._duration_ms
+
+    def marker_fractions(self) -> list[float]:
+        return [marker_time_fraction(keyframe.time, self._duration_ms) for keyframe in self._keyframes]
+
+    def _groove_rect(self) -> QRect:
+        option = QStyleOptionSlider()
+        self._slider.initStyleOption(option)
+        return self._slider.style().subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderGroove,
+            self._slider,
+        )
+
+    def _marker_x(self, time_seconds: float) -> float:
+        groove = self._groove_rect()
+        if self._duration_ms <= 0:
+            return groove.center().x()
+        fraction = marker_time_fraction(time_seconds, self._duration_ms)
+        return groove.left() + fraction * groove.width()
+
+    def _sync_geometry(self) -> None:
+        self.setGeometry(self._slider.rect())
+        self.raise_()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_geometry()
+
+    def paintEvent(self, _event) -> None:
+        if not self._keyframes or self._duration_ms <= 0:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        groove = self._groove_rect()
+        marker_y = groove.center().y()
+        for index, keyframe in enumerate(self._keyframes):
+            center_x = self._marker_x(keyframe.time)
+            half = 7 if index == self._active_index else 5
+            color = QColor("#7af0ff") if index == self._active_index else QColor("#11c2d2")
+            diamond = QPolygon(
+                [
+                    QPoint(int(center_x), int(marker_y - half)),
+                    QPoint(int(center_x + half), int(marker_y)),
+                    QPoint(int(center_x), int(marker_y + half)),
+                    QPoint(int(center_x - half), int(marker_y)),
+                ]
+            )
+            painter.setPen(QPen(color.darker(115), 1))
+            painter.setBrush(color)
+            painter.drawPolygon(diamond)
+        painter.end()
+
+    def _marker_index_at(self, pos: QPoint) -> int | None:
+        for index, keyframe in enumerate(self._keyframes):
+            center = QPoint(int(self._marker_x(keyframe.time)), self._groove_rect().center().y())
+            if (pos - center).manhattanLength() <= self.MARKER_HIT_RADIUS + 4:
+                return index
+        return None
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._slider and event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                index = self._marker_index_at(event.position().toPoint())
+                if index is not None:
+                    self.marker_clicked.emit(index)
+                    return True
+        return super().eventFilter(watched, event)
+
+
+class KeyframeTimelineWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.marker_layer = TimelineMarkerLayer(self.slider)
+        layout.addWidget(self.slider)
+
+    @property
+    def marker_count(self) -> int:
+        return self.marker_layer.marker_count
+
+    @property
+    def active_marker_index(self) -> int | None:
+        return self.marker_layer.active_marker_index
+
+    def marker_fractions(self) -> list[float]:
+        return self.marker_layer.marker_fractions()
 
 
 class PreviewLabel(QLabel):
@@ -328,7 +467,7 @@ class ReframeWindow(QMainWindow):
         ease_row.addWidget(self.easing_combo, 1)
         key_layout.addLayout(ease_row)
         key_buttons = QHBoxLayout()
-        self.add_key_btn = QPushButton("Add / Update")
+        self.add_key_btn = QPushButton("◆ Add Position Keyframe")
         self.remove_key_btn = QPushButton("Remove")
         key_buttons.addWidget(self.add_key_btn)
         key_buttons.addWidget(self.remove_key_btn)
@@ -340,7 +479,7 @@ class ReframeWindow(QMainWindow):
         nav_buttons.addWidget(self.next_key_btn)
         key_layout.addLayout(nav_buttons)
         self.key_table = QTableWidget(0, 3)
-        self.key_table.setHorizontalHeaderLabels(["Time", "X", "Ease"])
+        self.key_table.setHorizontalHeaderLabels(["Time", "Position", "Transition"])
         self.key_table.horizontalHeader().setStretchLastSection(True)
         self.key_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.key_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -371,9 +510,10 @@ class ReframeWindow(QMainWindow):
         row.addWidget(self.time_label)
         row.addStretch()
         transport_layout.addLayout(row)
-        self.timeline = QSlider(Qt.Orientation.Horizontal)
+        self.timeline_widget = KeyframeTimelineWidget()
+        self.timeline = self.timeline_widget.slider
         self.timeline.setRange(0, 1)
-        transport_layout.addWidget(self.timeline)
+        transport_layout.addWidget(self.timeline_widget)
         self.export_progress = QProgressBar()
         self.export_progress.setRange(0, 100)
         self.export_progress.hide()
@@ -414,6 +554,7 @@ class ReframeWindow(QMainWindow):
         self.timeline.sliderPressed.connect(self._start_scrub)
         self.timeline.sliderReleased.connect(self._finish_scrub)
         self.timeline.sliderMoved.connect(self._scrub_to)
+        self.timeline_widget.marker_layer.marker_clicked.connect(self._on_timeline_marker_clicked)
 
         self.add_key_btn.clicked.connect(self.add_or_update_keyframe)
         self.remove_key_btn.clicked.connect(self.remove_keyframe)
@@ -441,7 +582,7 @@ class ReframeWindow(QMainWindow):
             self.play_btn,
             self.back_btn,
             self.forward_btn,
-            self.timeline,
+            self.timeline_widget,
             self.crop_slider,
             self.aspect_combo,
             self.add_key_btn,
@@ -482,6 +623,7 @@ class ReframeWindow(QMainWindow):
         self._update_controls_enabled(True)
         self._refresh_keyframe_table()
         self._update_time_label(0)
+        self._update_keyframe_ui_state(0.0)
         return True
 
     def save_project(self) -> None:
@@ -616,11 +758,13 @@ class ReframeWindow(QMainWindow):
         if self.project.keyframes:
             self._set_crop_x(interpolate_position(self.project.keyframes, seconds))
         self._update_time_label(position_ms)
+        self._update_keyframe_ui_state(seconds)
 
     def _on_duration_changed(self, duration_ms: int) -> None:
         if duration_ms > 0:
             self.timeline.setRange(0, duration_ms)
             self._update_time_label(self.player.position())
+            self._refresh_timeline_markers()
 
     def _update_time_label(self, position_ms: int) -> None:
         duration_ms = self.player.duration() if self.player.duration() > 0 else int((self.video_info.duration if self.video_info else 0) * 1000)
@@ -639,26 +783,37 @@ class ReframeWindow(QMainWindow):
     def add_or_update_keyframe(self) -> None:
         time_seconds = self.player.position() / 1000
         easing = self.easing_combo.currentData()
-        existing = next((kf for kf in self.project.keyframes if abs(kf.time - time_seconds) < 0.15), None)
-        if existing:
-            existing.x = self.current_x
-            existing.easing = easing
-        else:
-            self.project.keyframes.append(Keyframe(round(time_seconds, 3), round(self.current_x, 4), easing))
-            self.project.keyframes.sort(key=lambda item: item.time)
+        add_or_update_keyframe_at(
+            self.project.keyframes,
+            time_seconds,
+            self.current_x,
+            easing,
+            KEYFRAME_TIME_TOLERANCE,
+        )
         self._refresh_keyframe_table()
+        self._update_keyframe_ui_state(time_seconds)
 
     def remove_keyframe(self) -> None:
         time_seconds = self.player.position() / 1000
-        nearby = [(abs(kf.time - time_seconds), idx) for idx, kf in enumerate(self.project.keyframes)]
-        if not nearby:
-            return
-        distance, index = min(nearby)
-        if distance <= 0.35:
-            self.project.keyframes.pop(index)
-            if not self.project.keyframes:
-                self.project.keyframes = [Keyframe(0.0, self.current_x, "easeInOut")]
-            self._refresh_keyframe_table()
+        index = find_keyframe_index_at_time(
+            self.project.keyframes,
+            time_seconds,
+            KEYFRAME_REMOVE_TOLERANCE,
+        )
+        if index is None:
+            nearby = [(abs(kf.time - time_seconds), idx) for idx, kf in enumerate(self.project.keyframes)]
+            if not nearby:
+                return
+            distance, index = min(nearby)
+            if distance > KEYFRAME_REMOVE_TOLERANCE:
+                return
+        self.project.keyframes.pop(index)
+        if not self.project.keyframes:
+            self.project.keyframes = [Keyframe(0.0, self.current_x, "easeInOut")]
+        self._refresh_keyframe_table()
+        if self.project.keyframes:
+            self._set_crop_x(interpolate_position(self.project.keyframes, time_seconds))
+        self._update_keyframe_ui_state(time_seconds)
 
     def jump_keyframe(self, direction: int) -> None:
         frames = sorted(self.project.keyframes, key=lambda item: item.time)
@@ -671,24 +826,77 @@ class ReframeWindow(QMainWindow):
             candidates = [kf for kf in frames if kf.time > now + 0.05]
             target = candidates[0] if candidates else (frames[-1] if frames else None)
         if target:
-            self.player.setPosition(round(target.time * 1000))
-            self._set_crop_x(target.x)
+            self._jump_to_keyframe(target)
 
     def _jump_to_table_keyframe(self, row: int, _column: int) -> None:
         frames = sorted(self.project.keyframes, key=lambda item: item.time)
         if 0 <= row < len(frames):
-            self.player.setPosition(round(frames[row].time * 1000))
-            self._set_crop_x(frames[row].x)
+            self._jump_to_keyframe(frames[row])
+
+    def _on_timeline_marker_clicked(self, index: int) -> None:
+        frames = sorted(self.project.keyframes, key=lambda item: item.time)
+        if 0 <= index < len(frames):
+            self._jump_to_keyframe(frames[index])
+
+    def _jump_to_keyframe(self, keyframe: Keyframe) -> None:
+        self.player.setPosition(round(keyframe.time * 1000))
+        self._set_crop_x(keyframe.x)
+        self._set_easing_for_keyframe(keyframe)
+        self._update_keyframe_ui_state(keyframe.time)
+
+    def _set_easing_for_keyframe(self, keyframe: Keyframe) -> None:
+        index = self.easing_combo.findData(keyframe.easing)
+        if index >= 0:
+            self.easing_combo.blockSignals(True)
+            self.easing_combo.setCurrentIndex(index)
+            self.easing_combo.blockSignals(False)
+
+    def _refresh_timeline_markers(self, active_index: int | None = None) -> None:
+        duration_ms = self.player.duration() if self.player.duration() > 0 else int(
+            (self.video_info.duration if self.video_info else 0) * 1000
+        )
+        self.timeline_widget.marker_layer.set_keyframes(
+            self.project.keyframes,
+            duration_ms,
+            active_index,
+        )
+
+    def _update_keyframe_ui_state(self, time_seconds: float) -> None:
+        frames = sorted(self.project.keyframes, key=lambda item: item.time)
+        active_index = None
+        active_keyframe = None
+        for index, keyframe in enumerate(frames):
+            if abs(keyframe.time - time_seconds) < KEYFRAME_TIME_TOLERANCE:
+                active_index = index
+                active_keyframe = keyframe
+                break
+        if active_keyframe is not None:
+            self.add_key_btn.setText("◆ Update Position Keyframe")
+            self._set_easing_for_keyframe(active_keyframe)
+            self.key_table.blockSignals(True)
+            self.key_table.selectRow(active_index)
+            self.key_table.blockSignals(False)
+        else:
+            self.add_key_btn.setText("◆ Add Position Keyframe")
+            self.key_table.blockSignals(True)
+            self.key_table.clearSelection()
+            self.key_table.blockSignals(False)
+        self._refresh_timeline_markers(active_index)
 
     def _refresh_keyframe_table(self) -> None:
         frames = sorted(self.project.keyframes, key=lambda item: item.time)
         self.key_table.setRowCount(len(frames))
-        names = {"easeInOut": "Smooth", "linear": "Linear", "hold": "Hold"}
+        transition_names = {"easeInOut": "Smooth", "linear": "Linear", "hold": "Hold"}
         for row, frame in enumerate(frames):
-            self.key_table.setItem(row, 0, QTableWidgetItem(f"{frame.time:.2f}s"))
-            self.key_table.setItem(row, 1, QTableWidgetItem(f"{frame.x * 100:.0f}%"))
-            self.key_table.setItem(row, 2, QTableWidgetItem(names.get(frame.easing, frame.easing)))
+            self.key_table.setItem(row, 0, QTableWidgetItem(f"{frame.time:.3f}s"))
+            self.key_table.setItem(row, 1, QTableWidgetItem(format_position_label(frame.x)))
+            self.key_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(transition_names.get(frame.easing, frame.easing)),
+            )
         self.key_table.resizeColumnsToContents()
+        self._update_keyframe_ui_state(self.player.position() / 1000)
 
     def export_video(self) -> None:
         if not self.video_info or not self.project.video_path:

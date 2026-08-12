@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-qt>=4"]
 
 [project.scripts]
 reframe-studio = "main:main"
@@ -24,3 +24,6 @@ py-modules = ["main", "reframe_app", "reframe_core"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: tests requiring external FFmpeg binaries",
+]

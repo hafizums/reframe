@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+KEYFRAME_TIME_TOLERANCE = 0.15
+KEYFRAME_REMOVE_TOLERANCE = 0.35
+
 
 @dataclass(order=True)
 class Keyframe:
@@ -132,6 +135,56 @@ def probe_video(path: str | Path) -> VideoInfo:
         duration=float((payload.get("format") or {}).get("duration") or 0.0),
         fps=fps,
     )
+
+
+def find_keyframe_index_at_time(
+    keyframes: list[Keyframe],
+    time_seconds: float,
+    tolerance: float = KEYFRAME_TIME_TOLERANCE,
+) -> int | None:
+    for index, keyframe in enumerate(keyframes):
+        if abs(keyframe.time - time_seconds) < tolerance:
+            return index
+    return None
+
+
+def format_position_label(normalized_x: float) -> str:
+    pct = int(round(max(0.0, min(1.0, normalized_x)) * 100))
+    if pct == 0:
+        return "0%   Left"
+    if pct == 50:
+        return "50%  Center"
+    if pct == 100:
+        return "100% Right"
+    if pct < 50:
+        return f"{pct}%  Left {pct}%"
+    return f"{pct}%  Right {pct}%"
+
+
+def add_or_update_keyframe_at(
+    keyframes: list[Keyframe],
+    time_seconds: float,
+    x: float,
+    easing: str,
+    tolerance: float = KEYFRAME_TIME_TOLERANCE,
+) -> Keyframe:
+    normalized = Keyframe(time_seconds, x, easing).normalized()
+    existing_index = find_keyframe_index_at_time(keyframes, normalized.time, tolerance)
+    if existing_index is not None:
+        keyframes[existing_index].x = normalized.x
+        keyframes[existing_index].easing = normalized.easing
+        keyframe = keyframes[existing_index]
+    else:
+        keyframe = Keyframe(round(normalized.time, 3), round(normalized.x, 4), normalized.easing)
+        keyframes.append(keyframe)
+    keyframes.sort(key=lambda item: item.time)
+    return keyframe
+
+
+def marker_time_fraction(keyframe_time: float, duration_ms: int) -> float:
+    if duration_ms <= 0:
+        return 0.0
+    return max(0.0, min(1.0, keyframe_time / (duration_ms / 1000)))
 
 
 def crop_geometry(src_w: int, src_h: int, aspect: str, normalized_x: float) -> tuple[int, int, int, int]:
