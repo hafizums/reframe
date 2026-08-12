@@ -162,7 +162,7 @@ def interpolate_position(keyframes: Iterable[Keyframe], time_seconds: float) -> 
         return frames[-1].x
 
     for left, right in zip(frames, frames[1:]):
-        if left.time <= time_seconds <= right.time:
+        if left.time <= time_seconds < right.time:
             duration = right.time - left.time
             if duration <= 0:
                 return left.x
@@ -201,10 +201,7 @@ def build_crop_x_expression(keyframes: Iterable[Keyframe], max_offset: int) -> s
         else:
             segment = f"({x1:.4f}+({x2:.4f}-{x1:.4f})*{p})"
 
-        expression = (
-            f"if(between(t\\,{left.time:.6f}\\,{right.time:.6f})\\,"
-            f"{segment}\\,{expression})"
-        )
+        expression = f"if(lt(t\\,{right.time:.6f})\\,{segment}\\,{expression})"
 
     return f"if(lt(t\\,{frames[0].time:.6f})\\,{first_x:.4f}\\,{expression})"
 
