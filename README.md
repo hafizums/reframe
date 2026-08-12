@@ -1,127 +1,162 @@
-# Reframe Studio 9:16
+# Reframe Studio
 
-A browser-based video reframing tool that converts **16:9 landscape videos** into **9:16 vertical videos** for TikTok, Instagram Reels, and YouTube Shorts.
+A native Python desktop application for turning landscape video into vertical or social-media-friendly crops with keyframed camera movement.
 
-![Preview](https://img.shields.io/badge/Status-Ready-brightgreen) ![License](https://img.shields.io/badge/License-MIT-blue)
+This branch replaces the original HTML/CSS/JavaScript editor with a Python-first architecture:
 
----
-
-## What It Does
-
-Upload any 16:9 landscape video and visually select which horizontal region to keep in a 9:16 vertical crop. Drag the crop window left/right across the source video, set keyframes along the timeline so the crop pans smoothly over time, then export a perfectly smooth vertical video using Python + FFmpeg.
-
----
+- **PySide6** for the native desktop UI and media playback
+- **QVideoSink** for frame-by-frame source and crop previews
+- **FFmpeg / ffprobe** for deterministic final rendering and video metadata
+- **JSON projects** for reusable keyframe timelines
 
 ## Features
 
-### 🎬 Visual Crop Editor
-- Drag or click on the 16:9 source canvas to position the vertical crop window
-- Real-time 9:16 preview showing exactly what the output will look like
-- Support for multiple aspect ratios: `9:16`, `1:1`, `4:5`, `4:3`
-
-### ⏱️ Keyframe Timeline
-- Add keyframes at any point in the video to animate the crop position over time
-- Three interpolation modes:
-  - **Smooth Easing** — cubic ease-in-out for natural camera pans
-  - **Linear Pan** — constant speed movement
-  - **Hold / Jump Cut** — stays in position then jumps to the next keyframe
-- Interactive timeline scrubber with diamond keyframe markers
-
-### 📱 TikTok Preview Overlay
-- Toggle a realistic TikTok UI overlay on the 9:16 preview (like button, comments, share, spinning vinyl disc, creator handle, music ticker)
-- See exactly how your video will look when posted
-
-### 🚀 Export Options
-
-| Method | Quality | Speed |
-|--------|---------|-------|
-| **Python + FFmpeg** (Recommended) | Frame-perfect, lossless H.264 MP4 | Fast |
-| **Browser Export** | Good, may have minor frame timing issues | Real-time |
-| **FFmpeg CLI** | Copy the raw command for terminal use | — |
-
-### 🎨 Built-in Demo Mode
-- No video? The app launches with an animated demo so you can explore all features immediately
-
----
-
-## Quick Start
-
-### 1. Serve the app locally
-
-```bash
-cd Reframe
-npx serve .
-```
-
-Open `http://localhost:3000` in your browser.
-
-### 2. Use the editor
-
-1. **Upload** a 16:9 video (drag & drop or click the upload area)
-2. **Drag** the cyan crop box left/right on the source canvas
-3. **Add keyframes** along the timeline to animate the crop pan
-4. **Preview** the result in the 9:16 live output panel
-
-### 3. Export with Python + FFmpeg
-
-```bash
-# Download keyframes.json from the Export modal, then:
-python export.py input.mp4 keyframes.json output_9x16.mp4
-```
-
-**Advanced options:**
-```bash
-# Custom resolution & framerate
-python export.py input.mp4 keyframes.json -r 720x1280 -f 60
-
-# Square crop for Instagram
-python export.py input.mp4 keyframes.json -a 1:1
-```
-
----
+- Open local MP4, MOV, MKV, AVI, or WebM video
+- Source preview with draggable/clickable crop targeting
+- Live cropped output preview
+- Aspect presets: `9:16`, `1:1`, `4:5`, `4:3`
+- Horizontal crop slider plus Left / Center / Right presets
+- Timeline scrubbing and playback controls
+- Keyframe add/update/remove and previous/next navigation
+- Three transition modes:
+  - Smooth Ease
+  - Linear
+  - Hold / Jump
+- Save and load Reframe projects as JSON
+- H.264 MP4 export through FFmpeg
+- Source audio retained in the exported MP4
+- Background export progress so the UI remains responsive
 
 ## Requirements
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Modern browser | Chrome / Edge / Firefox | Run the web app |
-| [Python 3](https://www.python.org/downloads/) | 3.8+ | Run the export script |
-| [FFmpeg](https://ffmpeg.org/download.html) | 4.0+ | Encode the output video |
+- Python 3.10+
+- FFmpeg and ffprobe available in `PATH`
 
----
+## Install
 
-## Project Structure
-
-```
-Reframe/
-├── index.html              # Main app shell & layout
-├── styles.css              # Dark theme, glassmorphic UI styling
-├── app.js                  # UI controller & event wiring
-├── export.py               # Python FFmpeg export script
-├── js/
-│   ├── reframe-engine.js   # Core dual-canvas rendering & crop logic
-│   ├── timeline.js         # Timeline scrubber & keyframe management
-│   ├── exporter.js         # Browser-based MediaRecorder export
-│   └── demo-generator.js   # Animated demo video generator
-└── README.md
+```bash
+python -m venv .venv
 ```
 
----
+### Windows
 
-## How the Export Works
+```powershell
+.venv\Scripts\activate
+pip install -e .
+python main.py
+```
 
-1. **In the browser**: You position the crop and set keyframes. The engine stores each keyframe as `{ time, x, easing }` where `x` is a normalized `0.0–1.0` horizontal position.
+### Linux / macOS
 
-2. **export.py** reads this JSON and builds an FFmpeg `-vf crop=...` filter with time-based expressions that replicate the exact same easing math:
-   - `easeInOut` → cubic bezier: `2t² (t<0.5)` / `1 - (-2t+2)²/2 (t≥0.5)`
-   - `linear` → straight interpolation
-   - `hold` → step function
+```bash
+source .venv/bin/activate
+pip install -e .
+python main.py
+```
 
-3. **FFmpeg** processes every frame deterministically — no dropped frames, no lag, perfectly smooth output.
+After installation you can also launch with:
 
----
+```bash
+reframe-studio
+```
 
-## License
+## Basic workflow
 
-MIT
-"# reframe" 
+1. Click **Open Video**.
+2. Choose the target aspect ratio.
+3. Drag or click inside the source preview to position the crop.
+4. Scrub to a time on the timeline.
+5. Choose the transition mode and click **Add / Update**.
+6. Repeat for additional crop movements.
+7. Click **Export MP4**.
+
+The preview and FFmpeg exporter use the same Python interpolation model so keyframe timing and easing are defined in one place.
+
+## Project files
+
+A saved project stores:
+
+```json
+{
+  "video_path": "C:/videos/input.mp4",
+  "aspect": "9:16",
+  "keyframes": [
+    {"time": 0.0, "x": 0.5, "easing": "easeInOut"},
+    {"time": 4.2, "x": 0.1, "easing": "linear"}
+  ]
+}
+```
+
+`x` is normalized:
+
+- `0.0` = far left
+- `0.5` = center
+- `1.0` = far right
+
+## Architecture
+
+```text
+reframe/
+├── main.py              # Application entry point
+├── reframe_app.py       # PySide6 desktop UI, playback, previews, export worker
+├── reframe_core.py      # Project model, crop math, interpolation, FFmpeg command builder
+├── pyproject.toml       # Python package metadata and dependencies
+├── requirements.txt     # Simple pip dependency list
+└── tests/
+    └── test_core.py     # Crop/interpolation tests
+```
+
+### `reframe_core.py`
+
+Contains the application logic that should stay independent of the UI:
+
+- `Keyframe`
+- `ReframeProject`
+- video probing
+- aspect/crop geometry
+- crop-position interpolation
+- FFmpeg crop expression generation
+- final FFmpeg command generation
+
+### `reframe_app.py`
+
+Contains the desktop application:
+
+- file dialogs
+- Qt media player
+- source and output frame previews
+- crop interaction
+- timeline controls
+- keyframe table
+- project save/load
+- threaded export progress
+
+## Export quality
+
+Default export uses:
+
+- H.264 (`libx264`)
+- CRF 18
+- AAC 192 kbps audio
+- Lanczos scaling
+- source frame rate
+- `+faststart` for MP4 playback
+
+## Tests
+
+Install development dependencies and run:
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+## Build a Windows executable
+
+Qt for Python includes `pyside6-deploy` for packaging PySide6 applications. From the project directory:
+
+```bash
+pyside6-deploy main.py
+```
+
+The application currently expects FFmpeg and ffprobe to be installed separately and available in `PATH`.
