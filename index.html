@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reframe Studio 9:16 - Intelligent Video Cropper & Keyframing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- TOP NAVIGATION BAR -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="3" />
+            <line x1="9" y1="4" x2="9" y2="20" stroke-dasharray="2 2"/>
+            <line x1="15" y1="4" x2="15" y2="20" stroke-dasharray="2 2"/>
+            <rect x="8" y="4" width="8" height="16" fill="rgba(99, 102, 241, 0.3)" stroke="#6366f1" stroke-width="2" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Reframe <span>9:16</span></h1>
+          <span class="badge">PRO STUDIO</span>
+        </div>
+      </div>
+
+      <div class="nav-controls">
+        <div class="control-group">
+          <label for="aspectRatioSelect">Aspect Ratio</label>
+          <select id="aspectRatioSelect" class="select-input">
+            <option value="9:16" selected>9:16 Portrait (Shorts/Reels/TikTok)</option>
+            <option value="1:1">1:1 Square (Instagram)</option>
+            <option value="4:5">4:5 Portrait (Feed)</option>
+            <option value="4:3">4:3 Standard</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <button id="toggleGridBtn" class="btn btn-secondary active-toggle" title="Toggle Rule of Thirds Grid">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+              <line x1="15" y1="3" x2="15" y2="21"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="3" y1="15" x2="21" y2="15"/>
+            </svg>
+            Grid
+          </button>
+          
+          <button id="centerCropBtn" class="btn btn-secondary" title="Center Crop Box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="16"/>
+              <line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Center
+          </button>
+        </div>
+
+        <div class="nav-actions">
+          <button id="loadDemoBtn" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Demo Video
+          </button>
+
+          <label id="uploadLabel" class="btn btn-secondary upload-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Open File
+            <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/ogg,video/mov" hidden />
+          </label>
+
+          <button id="exportModalBtn" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export Video
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="workspace">
+      <!-- LEFT COLUMN: EDITOR CANVAS & TIMELINE -->
+      <div class="workspace-left">
+        <section class="panel editor-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+              </svg>
+              Source Canvas (16:9 Landscape)
+            </div>
+            <div class="crop-info" id="cropPosInfo">X: 0.50 | 1080 x 1920</div>
+          </div>
+
+          <div class="canvas-viewport-container" id="dropZone">
+            <div class="canvas-wrapper" id="canvasWrapper">
+              <!-- Source Video Player (Hidden source element) -->
+              <video id="sourceVideo" crossorigin="anonymous" playsinline loop hidden></video>
+              
+              <!-- Canvas where video + crop bounding box overlay is drawn -->
+              <canvas id="sourceCanvas"></canvas>
+              
+              <!-- Drag overlay layer -->
+              <div id="cropOverlay" class="crop-overlay-box">
+                <div class="crop-handle handle-l"></div>
+                <div class="crop-handle handle-r"></div>
+                <div class="crop-center-indicator"></div>
+                <div class="crop-grid-lines">
+                  <div class="grid-line line-h1"></div>
+                  <div class="grid-line line-h2"></div>
+                  <div class="grid-line line-v1"></div>
+                  <div class="grid-line line-v2"></div>
+                </div>
+              </div>
+
+              <!-- Empty Drop state message -->
+              <div class="drop-overlay-msg" id="dropMsg" hidden>
+                <div class="drop-icon">🎬</div>
+                <h3>Drop your video file here</h3>
+                <p>Supports MP4, WebM, MOV files</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Position Slider Shortcut -->
+          <div class="quick-position-bar">
+            <span class="pos-label">Crop Horizontal Position:</span>
+            <button class="btn-pos-preset" data-pos="0">Left</button>
+            <input type="range" id="cropPosSlider" min="0" max="1" step="0.001" value="0.5" class="range-slider" />
+            <button class="btn-pos-preset" data-pos="0.5">Center</button>
+            <button class="btn-pos-preset" data-pos="1">Right</button>
+            <span id="sliderValDisplay" class="pos-val">50%</span>
+          </div>
+        </section>
+
+        <!-- BOTTOM TIMELINE BAR IN LEFT COLUMN -->
+        <div class="timeline-bar">
+          <!-- PLAYBACK CONTROLS -->
+          <div class="timeline-controls">
+            <div class="playback-buttons">
+              <button id="stepBackBtn" class="btn-icon" title="Step Back 1 Sec">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="11 19 2 12 11 5 11 19"></polygon>
+                  <polygon points="22 19 13 12 22 5 22 19"></polygon>
+                </svg>
+              </button>
+              <button id="playPauseBtn" class="btn-icon btn-play" title="Play/Pause (Spacebar)">
+                <svg id="playIcon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <svg id="pauseIcon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" hidden>
+                  <rect x="6" y="4" width="4" height="16" rx="1"/>
+                  <rect x="14" y="4" width="4" height="16" rx="1"/>
+                </svg>
+              </button>
+              <button id="stepForwardBtn" class="btn-icon" title="Step Forward 1 Sec">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 19 22 12 13 5 13 19"></polygon>
+                  <polygon points="2 19 11 12 2 5 2 19"></polygon>
+                </svg>
+              </button>
+            </div>
+
+            <div class="time-display">
+              <span id="currentTimeDisplay" class="time-code">00:00.00</span>
+              <span class="time-divider">/</span>
+              <span id="durationDisplay" class="time-code duration">00:00.00</span>
+            </div>
+
+            <!-- KEYFRAME TOOLS -->
+            <div class="keyframe-toolbar">
+              <button id="prevKeyframeBtn" class="btn btn-xs" title="Previous Keyframe">
+                &laquo; Key
+              </button>
+              <button id="addKeyframeBtn" class="btn btn-xs btn-accent" title="Add/Update Keyframe at Playhead">
+                + Add Keyframe
+              </button>
+              <button id="removeKeyframeBtn" class="btn btn-xs btn-danger" title="Delete Keyframe at Playhead">
+                &times; Delete Keyframe
+              </button>
+              <button id="nextKeyframeBtn" class="btn btn-xs" title="Next Keyframe">
+                Key &raquo;
+              </button>
+              
+              <div class="easing-selector">
+                <label for="keyframeEasing">Interpolation:</label>
+                <select id="keyframeEasing" class="select-input select-xs">
+                  <option value="easeInOut">Smooth Easing</option>
+                  <option value="linear">Linear Pan</option>
+                  <option value="hold">Hold / Jump Cut</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="volume-control">
+              <button id="muteBtn" class="btn-icon" title="Mute/Unmute">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+              </button>
+              <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.8" class="range-slider range-sm" />
+            </div>
+          </div>
+
+          <!-- TIMELINE SCRUBBER TRACK -->
+          <div class="timeline-ruler-container" id="timelineContainer">
+            <div class="timeline-track" id="timelineTrack">
+              <!-- Playhead pointer line -->
+              <div class="playhead" id="playhead">
+                <div class="playhead-head"></div>
+                <div class="playhead-line"></div>
+              </div>
+
+              <!-- Dynamic Keyframe Diamonds will be rendered here -->
+              <div class="keyframe-markers-container" id="keyframeContainer"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: FULL HEIGHT 9:16 LIVE PORTRAIT PREVIEW PANEL -->
+      <section class="panel preview-panel full-height-preview">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="7" y="2" width="10" height="20" rx="2"/>
+            </svg>
+            TikTok / Shorts 9:16 Preview
+          </div>
+          <div class="preview-header-actions">
+            <button id="toggleTiktokUiBtn" class="btn btn-xs btn-secondary active-toggle" title="Toggle TikTok Overlay">
+              🎵 TikTok UI
+            </button>
+            <span class="res-badge" id="outputResBadge">1080 × 1920 (9:16)</span>
+          </div>
+        </div>
+
+        <div class="preview-viewport">
+          <div class="tiktok-player-frame" id="tiktokPlayerFrame">
+            <!-- 9:16 Output Canvas -->
+            <canvas id="previewCanvas"></canvas>
+
+            <!-- TIKTOK OVERLAY LAYER -->
+            <div class="tiktok-ui-overlay" id="tiktokUiOverlay">
+              <!-- RIGHT SIDEBAR ACTIONS -->
+              <div class="tiktok-sidebar">
+                <div class="tiktok-action-item profile-item">
+                  <div class="avatar-box">
+                    <span class="avatar-emoji">🎬</span>
+                    <div class="plus-btn">+</div>
+                  </div>
+                </div>
+
+                <div class="tiktok-action-item">
+                  <button class="tiktok-icon-btn">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#ff2c55">
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                  </button>
+                  <span class="action-count">142.8K</span>
+                </div>
+
+                <div class="tiktok-action-item">
+                  <button class="tiktok-icon-btn">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="#ffffff">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                  </button>
+                  <span class="action-count">2.4K</span>
+                </div>
+
+                <div class="tiktok-action-item">
+                  <button class="tiktok-icon-btn">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="#ffee55">
+                      <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                  </button>
+                  <span class="action-count">18.9K</span>
+                </div>
+
+                <div class="tiktok-action-item">
+                  <button class="tiktok-icon-btn">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="#ffffff">
+                      <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
+                    </svg>
+                  </button>
+                  <span class="action-count">5.1K</span>
+                </div>
+
+                <div class="tiktok-action-item vinyl-item">
+                  <div class="vinyl-disc">
+                    <div class="vinyl-center"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- BOTTOM CAPTION AREA -->
+              <div class="tiktok-bottom-info">
+                <div class="tiktok-author">@reframestudio <span class="verify-badge">✓</span></div>
+                <div class="tiktok-caption">Reframed 16:9 landscape to true 9:16 vertical video #reframe #tiktok #shorts</div>
+                <div class="tiktok-music">
+                  <span class="music-icon">🎵</span>
+                  <div class="music-marquee">
+                    <span>Original Sound - Reframe Studio 9:16</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- EXPORT MODAL -->
+  <div id="exportModal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export Reframed Video
+        </h2>
+        <button id="closeModalBtn" class="btn-icon">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="tab-btn active" data-tab="python-ffmpeg">🐍 Python FFmpeg (Recommended)</button>
+          <button class="tab-btn" data-tab="direct-render">Browser Export</button>
+          <button class="tab-btn" data-tab="ffmpeg-code">FFmpeg CLI</button>
+          <button class="tab-btn" data-tab="json-keyframes">Keyframes JSON</button>
+        </div>
+
+        <!-- TAB 1: PYTHON FFMPEG EXPORT (PRIMARY) -->
+        <div class="tab-content active" id="tab-python-ffmpeg">
+          <p class="tab-desc">Export a perfectly smooth, frame-perfect 9:16 video using Python + FFmpeg. Zero lag, zero dropped frames — lossless quality.</p>
+
+          <div class="python-export-steps">
+            <div class="step-card">
+              <div class="step-number">1</div>
+              <div class="step-body">
+                <h4>Download your keyframes</h4>
+                <p>Save your current crop position & keyframe timeline as a JSON file.</p>
+                <button id="downloadKeyframesForPython" class="btn btn-primary">⬇ Download keyframes.json</button>
+              </div>
+            </div>
+
+            <div class="step-card">
+              <div class="step-number">2</div>
+              <div class="step-body">
+                <h4>Place files together</h4>
+                <p>Put your source video and <code>keyframes.json</code> in the same folder as <code>export.py</code>.</p>
+              </div>
+            </div>
+
+            <div class="step-card">
+              <div class="step-number">3</div>
+              <div class="step-body">
+                <h4>Run the export command</h4>
+                <div class="code-box-container">
+                  <pre><code id="pythonExportCommand">python export.py input.mp4 keyframes.json output_9x16.mp4</code></pre>
+                  <button id="copyPythonCmdBtn" class="btn btn-xs btn-secondary copy-btn">Copy</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="python-options">
+            <p class="option-label">Advanced options:</p>
+            <div class="code-box-container">
+              <pre><code># Custom resolution & framerate
+python export.py input.mp4 keyframes.json -r 720x1280 -f 60
+
+# Custom aspect ratio
+python export.py input.mp4 keyframes.json -a 1:1</code></pre>
+            </div>
+          </div>
+
+          <div class="prereq-note">
+            <span class="prereq-icon">ℹ️</span>
+            <span>Requires <a href="https://www.python.org/downloads/" target="_blank">Python 3</a> and <a href="https://ffmpeg.org/download.html" target="_blank">FFmpeg</a> installed on your system.</span>
+          </div>
+        </div>
+
+        <!-- TAB 2: BROWSER RENDER (FALLBACK) -->
+        <div class="tab-content" id="tab-direct-render">
+          <p class="tab-desc">Quick browser-based export. May have minor frame timing issues compared to FFmpeg.</p>
+          
+          <div class="export-options">
+            <div class="option-item">
+              <label>Resolution Quality:</label>
+              <select id="exportResSelect" class="select-input">
+                <option value="1080x1920">1080 × 1920 (Full HD Vertical)</option>
+                <option value="720x1280">720 × 1280 (HD Vertical)</option>
+                <option value="540x960">540 × 960 (Fast Draft)</option>
+              </select>
+            </div>
+            <div class="option-item">
+              <label>Framerate:</label>
+              <select id="exportFpsSelect" class="select-input">
+                <option value="60" selected>60 FPS (Ultra Smooth)</option>
+                <option value="30">30 FPS (Standard)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="export-checkbox-row">
+            <label class="checkbox-label" for="burnInOverlayCheckbox">
+              <input type="checkbox" id="burnInOverlayCheckbox" />
+              <span>Burn-in TikTok UI Overlay (Icons, Creator Badge & Music Banner)</span>
+            </label>
+          </div>
+
+          <div class="export-progress-area" id="progressArea" hidden>
+            <div class="progress-label">
+              <span id="progressStatus">Rendering video...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="progressFill"></div>
+            </div>
+          </div>
+
+          <div class="export-actions">
+            <button id="startRenderBtn" class="btn btn-primary btn-lg">
+              🚀 Start Rendering Video
+            </button>
+            <a id="downloadLink" class="btn btn-accent btn-lg" hidden download="reframed_video_9x16.webm">
+              ⬇ Download Reframed Video
+            </a>
+          </div>
+        </div>
+
+        <!-- TAB 3: FFMPEG COMMAND LINE -->
+        <div class="tab-content" id="tab-ffmpeg-code">
+          <p class="tab-desc">Raw FFmpeg crop command with keyframe pan interpolation for terminal usage.</p>
+          
+          <div class="code-box-container">
+            <pre><code id="ffmpegCommandCode">ffmpeg -i input.mp4 ...</code></pre>
+            <button id="copyFfmpegBtn" class="btn btn-xs btn-secondary copy-btn">Copy Command</button>
+          </div>
+        </div>
+
+        <!-- TAB 4: KEYFRAME JSON -->
+        <div class="tab-content" id="tab-json-keyframes">
+          <p class="tab-desc">Import or export your keyframe timeline configuration for reuse later.</p>
+          <div class="code-box-container">
+            <pre><code id="jsonKeyframesCode">[]</code></pre>
+            <button id="copyJsonBtn" class="btn btn-xs btn-secondary copy-btn">Copy JSON</button>
+          </div>
+          <div class="json-actions">
+            <button id="downloadJsonBtn" class="btn btn-secondary">Download JSON File</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Scripts -->
+  <script src="js/demo-generator.js"></script>
+  <script src="js/reframe-engine.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
