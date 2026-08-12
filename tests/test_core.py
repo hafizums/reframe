@@ -31,10 +31,14 @@ def test_linear_interpolation():
     assert interpolate_position(frames, 10) == 1
 
 
-def test_hold_interpolation():
-    frames = [Keyframe(0, 0.2, "hold"), Keyframe(5, 0.8, "linear")]
+def test_hold_interpolation_jumps_exactly_on_next_keyframe():
+    frames = [
+        Keyframe(0, 0.2, "hold"),
+        Keyframe(5, 0.8, "linear"),
+        Keyframe(10, 1.0, "linear"),
+    ]
     assert interpolate_position(frames, 4.9) == 0.2
-    assert interpolate_position(frames, 5) == 0.8
+    assert interpolate_position(frames, 5.0) == 0.8
 
 
 def test_smooth_interpolation_is_bounded():
@@ -57,3 +61,4 @@ def test_ffmpeg_expression_contains_easing_and_hold_logic():
     )
     assert "pow(" in smooth
     assert "250.0000" in hold
+    assert "lt(t\\,5.000000)" in hold
